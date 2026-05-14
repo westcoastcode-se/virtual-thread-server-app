@@ -34,6 +34,8 @@ public class Main implements AutoCloseable {
     private final DataSource dataSource;
     private final EmployeeRepository employeeRepository;
 
+    private final AutoCloseable employeeSubscriber;
+
     @Getter
     private final Config appConfig;
 
@@ -61,6 +63,19 @@ public class Main implements AutoCloseable {
                 })
                 .withListener(new HTTPListenerConfiguration(appConfig.getServer().getManagementPort()));
         managementServer.start();
+
+        // Example on how to listen for changes on the employee table. Is useful if we want to
+        // keep an in-memory version of all employees managed by database trigger. Useful when having multiple
+        // instances of this app running at the same time
+        employeeSubscriber = employeeRepository.subscriber(
+                added -> {
+                    log.info("Added employee {}", added);
+                }, updated -> {
+                    log.info("Updated employee {}", updated);
+                }, deleted -> {
+                    log.info("Deleted employee {}", deleted);
+                }
+        );
     }
 
     /**
@@ -146,6 +161,16 @@ public class Main implements AutoCloseable {
                 }
                 ok(employee.get(), res);
                 return;
+            } else if (req.getMethod() == HTTPMethod.DELETE) {
+                var _ = authenticate(req, "test:delete");
+                var id = valueFromPath(req, "/api/v1/employees/%", UUID.class);
+                var employee = employeeRepository.findOne(id);
+                if (employee.isEmpty()) {
+                    throw notFound(req);
+                }
+                employeeRepository.delete(employee.get());
+                ok(employee.get(), res);
+                return;
             }
         } else if (req.getPath().equals("/api/v1/auth/login")) {
             if (req.getMethod() == HTTPMethod.POST) {
@@ -162,6 +187,7 @@ public class Main implements AutoCloseable {
         throw notFound(req);
     }
 
+    @SneakyThrows
     @Override
     public void close() {
         if (managementServer != null) {
@@ -169,6 +195,9 @@ public class Main implements AutoCloseable {
         }
         if (server != null) {
             server.close();
+        }
+        if (employeeSubscriber != null) {
+            employeeSubscriber.close();
         }
     }
 

@@ -136,7 +136,7 @@ public final class JWTFeature {
     public static String createAccessToken() {
         return JWT.create()
                 .withAudience(AUDIENCE)
-                .withClaim("scope", "test:read test:write")
+                .withClaim("scope", "test:read test:write test:delete")
                 .withIssuedAt(Instant.now())
                 .withIssuer("myapp")
                 .withExpiresAt(Instant.now().plusSeconds(3600))
