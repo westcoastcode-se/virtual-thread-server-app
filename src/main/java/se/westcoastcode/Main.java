@@ -34,8 +34,6 @@ public class Main implements AutoCloseable {
     private final DataSource dataSource;
     private final EmployeeRepository employeeRepository;
 
-    private final AutoCloseable employeeSubscriber;
-
     @Getter
     private final Config appConfig;
 
@@ -46,19 +44,6 @@ public class Main implements AutoCloseable {
         initDatabaseTables(dataSource);
 
         employeeRepository = new EmployeeRepository(dataSource);
-
-        // Example on how to listen for changes on the employee table. Is useful if we want to
-        // keep an in-memory version of all employees managed by database trigger. Useful when having multiple
-        // instances of this app running at the same time
-        employeeSubscriber = employeeRepository.subscribe(
-                added -> {
-                    log.info("Added employee {}", added);
-                }, updated -> {
-                    log.info("Updated employee {}", updated);
-                }, deleted -> {
-                    log.info("Deleted employee {}", deleted);
-                }
-        );
 
         // Main server
         server = new HTTPServer()
@@ -195,9 +180,6 @@ public class Main implements AutoCloseable {
         }
         if (server != null) {
             server.close();
-        }
-        if (employeeSubscriber != null) {
-            employeeSubscriber.close();
         }
     }
 
