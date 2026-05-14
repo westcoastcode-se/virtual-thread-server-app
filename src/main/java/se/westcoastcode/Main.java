@@ -9,6 +9,7 @@ import io.fusionauth.http.server.HTTPRequest;
 import io.fusionauth.http.server.HTTPResponse;
 import io.fusionauth.http.server.HTTPServer;
 import jakarta.validation.ConstraintViolationException;
+import lombok.Getter;
 import lombok.SneakyThrows;
 import se.westcoastcode.persistence.Employee;
 import se.westcoastcode.persistence.EmployeeRepository;
@@ -25,17 +26,41 @@ import static se.westcoastcode.features.JWTFeature.createAccessToken;
 import static se.westcoastcode.features.LoggingFeatures.LOGGING_FACTORY;
 import static se.westcoastcode.features.LoggingFeatures.getLogger;
 
-public class Main {
+public class Main implements AutoCloseable {
     private static final Logger log = getLogger(Main.class);
 
+    private final HTTPServer server;
+    private final HTTPServer managementServer;
     private final DataSource dataSource;
     private final EmployeeRepository employeeRepository;
 
+    @Getter
+    private final Config appConfig;
+
     public Main(final Config appConfig) {
+        this.appConfig = appConfig;
+
         dataSource = new HikariDataSource(appConfig.createHikariConfig());
         initDatabaseTables(dataSource);
 
         employeeRepository = new EmployeeRepository(dataSource);
+
+        // Main server
+        server = new HTTPServer()
+                .withLoggerFactory(LOGGING_FACTORY)
+                .withHandler(this::traceLogging)
+                .withListener(new HTTPListenerConfiguration(appConfig.getServer().getPort()));
+        server.start();
+
+        // Management Server for metrics and performance monitoring
+        var monitoring = new Monitoring();
+        managementServer = new HTTPServer()
+                .withLoggerFactory(LOGGING_FACTORY)
+                .withHandler((req, res) -> {
+                    ok(monitoring.current(), res);
+                })
+                .withListener(new HTTPListenerConfiguration(appConfig.getServer().getManagementPort()));
+        managementServer.start();
     }
 
     /**
@@ -46,24 +71,7 @@ public class Main {
         var config = loadConfig(System.getProperty("profile", "dev"));
 
         // Instantiate the main application
-        var app = new Main(config);
-
-        // Main server
-        var server = new HTTPServer()
-                .withLoggerFactory(LOGGING_FACTORY)
-                .withHandler(app::traceLogging)
-                .withListener(new HTTPListenerConfiguration(config.getServer().getPort()));
-        server.start();
-
-        // Management Server for metrics and performance monitoring
-        var monitoring = new Monitoring();
-        var management = new HTTPServer()
-                .withLoggerFactory(LOGGING_FACTORY)
-                .withHandler((req, res) -> {
-                    ok(monitoring.current(), res);
-                })
-                .withListener(new HTTPListenerConfiguration(config.getServer().getManagementPort()));
-        management.start();
+        new Main(config);
     }
 
     /**
@@ -152,6 +160,16 @@ public class Main {
             }
         }
         throw notFound(req);
+    }
+
+    @Override
+    public void close() {
+        if (managementServer != null) {
+            managementServer.close();
+        }
+        if (server != null) {
+            server.close();
+        }
     }
 
     @CompiledJson

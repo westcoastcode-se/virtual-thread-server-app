@@ -4,7 +4,9 @@ import com.dslplatform.json.DslJson;
 import io.fusionauth.http.server.HTTPRequest;
 import lombok.SneakyThrows;
 
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 
 /**
  * A collection of useful JSON-related functions
@@ -36,5 +38,16 @@ public final class JSONFeature {
     @SneakyThrows
     public static <T> T fromJson(Class<T> type, HTTPRequest req) {
         return JSON.deserialize(type, req.getInputStream());
+    }
+
+    /**
+     * @param obj
+     * @return
+     */
+    @SneakyThrows
+    public static String toJson(Object obj) {
+        var stream = new ByteArrayOutputStream();
+        JSON.serialize(obj, stream);
+        return stream.toString(StandardCharsets.UTF_8);
     }
 }
