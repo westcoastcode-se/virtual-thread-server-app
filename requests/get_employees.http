@@ -1,0 +1,16 @@
+### Authenicate
+
+POST http://localhost:4242/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "username": "admin",
+  "password": "super-secret"
+}
+
+> {% client.global.set("accessToken", response.body.accessToken); %}
+
+### Get all employees
+
+GET http://localhost:4242/api/v1/employees
+Authorization: Bearer {{accessToken}}
