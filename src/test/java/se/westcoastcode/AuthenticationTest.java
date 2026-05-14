@@ -23,8 +23,10 @@ public class AuthenticationTest {
 
     @BeforeAll
     static void beforeAll() {
+        // Start postgres in docker
         postgres.start();
 
+        // Start main application in memory and connect it to PostgresSQL running in docker
         var config = new Config();
         config.setDatabase(new Config.Database());
         config.getDatabase().setUrl(postgres.getJdbcUrl());
@@ -35,7 +37,10 @@ public class AuthenticationTest {
 
     @AfterAll
     static void afterAll() {
+        // Stop main application
         main.close();
+
+        // Stop PostgresSQL
         postgres.stop();
     }
 
