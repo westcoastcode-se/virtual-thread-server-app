@@ -153,6 +153,7 @@ public class EmployeeRepository {
      * @return a closable subscriber
      */
     public AutoCloseable subscriber(Consumer<Employee> added, Consumer<Employee> updated, Consumer<UUID> deleted) {
+        findAll().forEach(added);
         var thread = new Thread(() -> subscribe(added, updated, deleted));
         thread.start();
         return () -> {
@@ -172,7 +173,6 @@ public class EmployeeRepository {
     @SneakyThrows
     public void subscribe(Consumer<Employee> added, Consumer<Employee> updated, Consumer<UUID> deleted) {
         var query = "LISTEN employee_changed";
-        findAll().forEach(added);
         try (var conn = dataSource.getConnection()) {
             var ps = conn.createStatement();
             ps.execute(query);
