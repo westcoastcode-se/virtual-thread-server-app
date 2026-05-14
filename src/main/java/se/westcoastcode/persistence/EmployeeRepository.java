@@ -8,7 +8,6 @@ import org.postgresql.PGNotification;
 import javax.sql.DataSource;
 import java.io.EOFException;
 import java.sql.Connection;
-import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
@@ -145,19 +144,34 @@ public class EmployeeRepository {
     }
 
     /**
-     * Create an Employee subscriber against the database
+     * Create an Employee subscribe against the database
      *
      * @param added   Called when an employee is added
      * @param updated Called when an employee is updated
      * @param deleted Called when an employee is deleted
-     * @return a closable subscriber
+     * @return a closable subscribe
      */
-    public AutoCloseable subscriber(Consumer<Employee> added, Consumer<Employee> updated, Consumer<UUID> deleted) {
+    public AutoCloseable subscribe(Consumer<Employee> added, Consumer<Employee> updated, Consumer<UUID> deleted) {
         findAll().forEach(added);
-        var thread = new Thread(() -> subscribe(added, updated, deleted));
+        var thread = new Thread(() -> {
+            while (!Thread.currentThread().isInterrupted()) {
+                try {
+                    doSubscribe(added, updated, deleted);
+                } catch (Exception e) {
+                    log.error("Error while subscribing", e);
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException ex) {
+                        break;
+                    }
+                }
+            }
+            log.info("Subscriber thread exiting");
+        });
+        thread.setName("EmployeeRepository-Subscriber");
         thread.start();
         return () -> {
-            log.info("Closing subscriber");
+            log.info("Closing subscribe");
             thread.interrupt();
             log.info("Subscriber closed");
         };
@@ -171,7 +185,7 @@ public class EmployeeRepository {
      * @param deleted Called when an employee is deleted
      */
     @SneakyThrows
-    public void subscribe(Consumer<Employee> added, Consumer<Employee> updated, Consumer<UUID> deleted) {
+    private void doSubscribe(Consumer<Employee> added, Consumer<Employee> updated, Consumer<UUID> deleted) {
         var query = "LISTEN employee_changed";
         try (var conn = dataSource.getConnection()) {
             var ps = conn.createStatement();
@@ -180,41 +194,38 @@ public class EmployeeRepository {
             conn.commit();
 
             while (!Thread.currentThread().isInterrupted()) {
-                try {
-                    var pgConnection = conn.unwrap(PGConnection.class);
-                    var notifications = pgConnection.getNotifications(30000);
-                    if (notifications != null && notifications.length > 0) {
-                        log.trace("{} notifications received", notifications.length);
-                        for (PGNotification notification : notifications) {
-                            var parts = notification.getParameter().split(":");
-                            if (parts.length != 3) {
-                                continue;
-                            }
-                            var action = parts[1];
-                            var id = UUID.fromString(parts[2]);
-                            switch (action) {
-                                case "I" -> {
-                                    var employee = findOne(id);
-                                    employee.ifPresent(added);
-                                }
-                                case "U" -> {
-                                    var employee = findOne(id);
-                                    employee.ifPresent(updated);
-                                }
-                                case "D" -> deleted.accept(id);
-                            }
+                var pgConnection = conn.unwrap(PGConnection.class);
+                var notifications = pgConnection.getNotifications(10000);
+                if (notifications != null && notifications.length > 0) {
+                    log.trace("{} notifications received", notifications.length);
+                    for (PGNotification notification : notifications) {
+                        var parts = notification.getParameter().split(":");
+                        if (parts.length != 3) {
+                            continue;
                         }
-                    }
-                } catch (SQLException e) {
-                    if (e.getCause() instanceof EOFException && Thread.currentThread().isInterrupted()) {
-                        // This exception happens when thread is interrupted sleeping connections
-                        // are woken up because of it
-                    } else {
-                        log.error("Unhandled SQL exception", e);
+                        var action = parts[1];
+                        var id = UUID.fromString(parts[2]);
+                        switch (action) {
+                            case "I" -> {
+                                var employee = findOne(id);
+                                employee.ifPresent(added);
+                            }
+                            case "U" -> {
+                                var employee = findOne(id);
+                                employee.ifPresent(updated);
+                            }
+                            case "D" -> deleted.accept(id);
+                        }
                     }
                 }
             }
+        } catch (Exception e) {
+            if (e.getCause() instanceof EOFException && Thread.currentThread().isInterrupted()) {
+                // This exception happens when thread is interrupted sleeping connections
+                // are woken up because of it
+                return;
+            }
+            throw e;
         }
-        log.info("Subscriber thread exiting");
     }
 }

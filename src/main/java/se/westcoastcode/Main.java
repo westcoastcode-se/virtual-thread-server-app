@@ -50,7 +50,7 @@ public class Main implements AutoCloseable {
         // Example on how to listen for changes on the employee table. Is useful if we want to
         // keep an in-memory version of all employees managed by database trigger. Useful when having multiple
         // instances of this app running at the same time
-        employeeSubscriber = employeeRepository.subscriber(
+        employeeSubscriber = employeeRepository.subscribe(
                 added -> {
                     log.info("Added employee {}", added);
                 }, updated -> {
