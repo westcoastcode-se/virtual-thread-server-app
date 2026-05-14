@@ -8,7 +8,7 @@ memory footprint
 1. REST service using [java-http](https://github.com/FusionAuth/java-http)
 2. JSON serialization using [dsl-json](https://github.com/ngs-doo/dsl-json)
 3. JWT authorization and authentication using [java-jwt](https://github.com/auth0/java-jwt)
-4. PostgreSQL JDBC
+4. PostgreSQL JDBC - Including notification based subscriptions from database
 5. UUID v7 support using [java-uuid-generator](https://github.com/cowtowncoder/java-uuid-generator)
 6. Request validation using javax.validation
    and [Hibernate Validator](https://docs.hibernate.org/stable/validator/reference/en-US/html_single/)
