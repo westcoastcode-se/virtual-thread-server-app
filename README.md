@@ -3,8 +3,6 @@
 The goal of this project is to create a RESTful application with modern virtual threads, database support and small
 memory footprint
 
-This is a test web application built with , which is a high performance virtual thread http server.
-
 ## Features
 
 1. REST service using [java-http](https://github.com/FusionAuth/java-http)
