@@ -100,6 +100,20 @@ public final class LoggingFeatures {
             protected void handleMessage(String message) {
                 System.out.println(message);
             }
+
+            @Override
+            protected String format(String message, Object... values) {
+                // Sanitize all varargs so that non-printable Unicode characters are removed
+                var object = new Object[values.length];
+                for (int i = 0; i < values.length; i++) {
+                    Object value = values[i];
+                    if (value != null) {
+                        value = value.toString().replace("[\\p{C}]", "");
+                    }
+                    object[i] = value;
+                }
+                return super.format(message, object);
+            }
         }
     }
 }
