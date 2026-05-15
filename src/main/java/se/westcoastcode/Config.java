@@ -58,6 +58,9 @@ public class Config {
     public static Config loadConfig(final String env) {
         // Load different configuration files based on different environments. Dev should load the configuration
         // from a file in the repository.
+        //
+        // In case of test, qa and prod. Those configurations should be injected into the docker container or whatever
+        // virtualization method you are using
         return switch (env) {
             case "dev" -> loadConfigFromFile(Path.of("src/config/config-dev.json"));
             case "test" -> loadConfigFromFile(Path.of("/app/config-test.json"));

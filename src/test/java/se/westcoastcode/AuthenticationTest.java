@@ -4,9 +4,7 @@ import lombok.SneakyThrows;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.containers.PostgreSQLContainer;
 
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -18,30 +16,17 @@ import static se.westcoastcode.features.JSONFeature.toJson;
 
 public class AuthenticationTest {
 
-    private static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres");
-    private static Main main;
+    private static API api;
 
     @BeforeAll
     static void beforeAll() {
-        // Start postgres in docker
-        postgres.start();
-
-        // Start main application in memory and connect it to PostgresSQL running in docker
-        var config = new Config();
-        config.setDatabase(new Config.Database());
-        config.getDatabase().setUrl(postgres.getJdbcUrl());
-        config.getDatabase().setUsername(postgres.getUsername());
-        config.getDatabase().setPassword(postgres.getPassword());
-        main = new Main(config);
+        api = new API();
+        api.start();
     }
 
     @AfterAll
     static void afterAll() {
-        // Stop main application
-        main.close();
-
-        // Stop PostgresSQL
-        postgres.stop();
+        api.close();
     }
 
     @Test
@@ -49,7 +34,7 @@ public class AuthenticationTest {
     public void verifyAuthenticationSuccess() {
         var body = toJson(new Main.AuthRequest("admin", "super-secret"));
         var request = HttpRequest.newBuilder()
-                .uri(new URI("http://localhost:" + main.getAppConfig().getServer().getPort() + "/api/v1/auth/login"))
+                .uri(api.toURI("/api/v1/auth/login"))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
@@ -66,7 +51,7 @@ public class AuthenticationTest {
     public void verifyAuthenticationFailed() {
         var body = toJson(new Main.AuthRequest("admin", "hell no!"));
         var request = HttpRequest.newBuilder()
-                .uri(new URI("http://localhost:" + main.getAppConfig().getServer().getPort() + "/api/v1/auth/login"))
+                .uri(api.toURI("/api/v1/auth/login"))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();

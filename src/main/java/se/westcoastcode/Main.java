@@ -27,7 +27,7 @@ import static se.westcoastcode.features.JWTFeature.createAccessToken;
 import static se.westcoastcode.features.LoggingFeatures.LOGGING_FACTORY;
 import static se.westcoastcode.features.LoggingFeatures.getLogger;
 
-public class Main implements AutoCloseable {
+public final class Main implements AutoCloseable {
     private static final Logger log = getLogger(Main.class);
 
     private final HTTPServer server;
@@ -41,9 +41,11 @@ public class Main implements AutoCloseable {
     public Main(final Config appConfig) {
         this.appConfig = appConfig;
 
+        // Create a datasource and setup database
         dataSource = new HikariDataSource(appConfig.createHikariConfig());
         sql(dataSource, "init.sql");
 
+        // Create repository class
         employeeRepository = new EmployeeRepository();
 
         // Main server
@@ -51,7 +53,6 @@ public class Main implements AutoCloseable {
                 .withLoggerFactory(LOGGING_FACTORY)
                 .withHandler(this::traceLogging)
                 .withListener(new HTTPListenerConfiguration(appConfig.getServer().getPort()));
-        server.start();
 
         // Management Server for metrics and performance monitoring
         var monitoring = new Monitoring();
@@ -61,6 +62,13 @@ public class Main implements AutoCloseable {
                     ok(monitoring.current(), res);
                 })
                 .withListener(new HTTPListenerConfiguration(appConfig.getServer().getManagementPort()));
+    }
+
+    /**
+     * Start the application
+     */
+    public void start() {
+        server.start();
         managementServer.start();
     }
 
@@ -72,7 +80,7 @@ public class Main implements AutoCloseable {
         var config = loadConfig(System.getProperty("profile", "dev"));
 
         // Instantiate the main application
-        new Main(config);
+        new Main(config).start();
     }
 
     /**

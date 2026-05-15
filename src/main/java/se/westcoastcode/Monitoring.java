@@ -11,7 +11,7 @@ import java.lang.management.ThreadMXBean;
 import java.time.Duration;
 import java.time.Instant;
 
-public class Monitoring {
+public final class Monitoring {
     private static final long STARTUP_TIME = ManagementFactory.getRuntimeMXBean().getStartTime();
 
     private final OperatingSystemMXBean osBean;
