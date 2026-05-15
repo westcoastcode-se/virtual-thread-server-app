@@ -18,7 +18,7 @@ import javax.sql.DataSource;
 import java.util.UUID;
 
 import static se.westcoastcode.Config.loadConfig;
-import static se.westcoastcode.Database.initDatabaseTables;
+import static se.westcoastcode.features.DatabaseFeatures.sql;
 import static se.westcoastcode.features.DatabaseFeatures.transactional;
 import static se.westcoastcode.features.HTTPFeatures.*;
 import static se.westcoastcode.features.JSONFeature.fromJson;
@@ -42,7 +42,7 @@ public class Main implements AutoCloseable {
         this.appConfig = appConfig;
 
         dataSource = new HikariDataSource(appConfig.createHikariConfig());
-        initDatabaseTables(dataSource);
+        sql(dataSource, "init.sql");
 
         employeeRepository = new EmployeeRepository();
 
@@ -127,7 +127,7 @@ public class Main implements AutoCloseable {
         } else if (req.getPath().equals("/api/v1/employees")) {
             if (req.getMethod() == HTTPMethod.GET) {
                 var _ = authenticate(req, "test:read");
-                var employees = transactional(dataSource, conn -> {
+                var employees = transactional(dataSource, true, conn -> {
                     return employeeRepository.findAll(conn);
                 });
                 ok(employees, res);
@@ -146,7 +146,7 @@ public class Main implements AutoCloseable {
             if (req.getMethod() == HTTPMethod.GET) {
                 var _ = authenticate(req, "test:read");
                 var id = valueFromPath(req, "/api/v1/employees/%", UUID.class);
-                var employee = transactional(dataSource, conn -> {
+                var employee = transactional(dataSource, true, conn -> {
                     var optionalEmployee = employeeRepository.findOne(conn, id);
                     if (optionalEmployee.isEmpty()) {
                         throw notFound(req);
