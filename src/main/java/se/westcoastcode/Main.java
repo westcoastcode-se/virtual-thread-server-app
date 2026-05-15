@@ -19,6 +19,7 @@ import java.util.UUID;
 
 import static se.westcoastcode.Config.loadConfig;
 import static se.westcoastcode.Database.initDatabaseTables;
+import static se.westcoastcode.features.DatabaseFeatures.transactional;
 import static se.westcoastcode.features.HTTPFeatures.*;
 import static se.westcoastcode.features.JSONFeature.fromJson;
 import static se.westcoastcode.features.JWTFeature.authenticate;
@@ -43,7 +44,7 @@ public class Main implements AutoCloseable {
         dataSource = new HikariDataSource(appConfig.createHikariConfig());
         initDatabaseTables(dataSource);
 
-        employeeRepository = new EmployeeRepository(dataSource);
+        employeeRepository = new EmployeeRepository();
 
         // Main server
         server = new HTTPServer()
@@ -126,13 +127,18 @@ public class Main implements AutoCloseable {
         } else if (req.getPath().equals("/api/v1/employees")) {
             if (req.getMethod() == HTTPMethod.GET) {
                 var _ = authenticate(req, "test:read");
-                ok(employeeRepository.findAll(), res);
+                var employees = transactional(dataSource, conn -> {
+                    return employeeRepository.findAll(conn);
+                });
+                ok(employees, res);
                 return;
             }
             if (req.getMethod() == HTTPMethod.POST) {
                 var _ = authenticate(req, "test:write");
                 var employee = fromJson(Employee.class, req);
-                employeeRepository.insert(employee);
+                transactional(dataSource, conn -> {
+                    employeeRepository.insert(conn, employee);
+                });
                 created(employee, res);
                 return;
             }
@@ -140,21 +146,28 @@ public class Main implements AutoCloseable {
             if (req.getMethod() == HTTPMethod.GET) {
                 var _ = authenticate(req, "test:read");
                 var id = valueFromPath(req, "/api/v1/employees/%", UUID.class);
-                var employee = employeeRepository.findOne(id);
-                if (employee.isEmpty()) {
-                    throw notFound(req);
-                }
-                ok(employee.get(), res);
+                var employee = transactional(dataSource, conn -> {
+                    var optionalEmployee = employeeRepository.findOne(conn, id);
+                    if (optionalEmployee.isEmpty()) {
+                        throw notFound(req);
+                    }
+                    return optionalEmployee.get();
+                });
+
+                ok(employee, res);
                 return;
             } else if (req.getMethod() == HTTPMethod.DELETE) {
                 var _ = authenticate(req, "test:delete");
                 var id = valueFromPath(req, "/api/v1/employees/%", UUID.class);
-                var employee = employeeRepository.findOne(id);
-                if (employee.isEmpty()) {
-                    throw notFound(req);
-                }
-                employeeRepository.delete(employee.get());
-                ok(employee.get(), res);
+                var employee = transactional(dataSource, conn -> {
+                    var optionalEmployee = employeeRepository.findOne(conn, id);
+                    if (optionalEmployee.isEmpty()) {
+                        throw notFound(req);
+                    }
+                    employeeRepository.delete(conn, optionalEmployee.get());
+                    return optionalEmployee.get();
+                });
+                ok(employee, res);
                 return;
             }
         } else if (req.getPath().equals("/api/v1/auth/login")) {

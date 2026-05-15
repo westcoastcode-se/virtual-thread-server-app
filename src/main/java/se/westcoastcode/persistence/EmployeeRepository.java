@@ -20,17 +20,12 @@ import static se.westcoastcode.features.ValidationFeatures.validate;
 
 public class EmployeeRepository {
     private static final Logger log = getLogger(EmployeeRepository.class);
-    private final DataSource dataSource;
-
-    public EmployeeRepository(DataSource dataSource) {
-        this.dataSource = dataSource;
-    }
 
     @SneakyThrows
-    public List<Employee> findAll() {
+    public List<Employee> findAll(final Connection conn) {
         var query = "SELECT id, name FROM employee";
 
-        try (var conn = dataSource.getConnection(); var ps = conn.createStatement()) {
+        try (var ps = conn.createStatement()) {
             var result = new ArrayList<Employee>();
             try (var rs = ps.executeQuery(query)) {
                 while (rs.next()) {
@@ -45,21 +40,14 @@ public class EmployeeRepository {
     }
 
     /**
-     * Get an employee based on its unique ID
+     * Find a single employee
      *
-     * @param id The employee id
+     * @param conn The connection
+     * @param id   The employee id
      * @return The employee if found; Optional.empty() otherwise
      */
     @SneakyThrows
-    public Optional<Employee> findOne(final UUID id) {
-        try (var conn = dataSource.getConnection()) {
-            return findOne(conn, id);
-        }
-    }
-
-
-    @SneakyThrows
-    private Optional<Employee> findOne(final Connection conn, final UUID id) {
+    public Optional<Employee> findOne(final Connection conn, final UUID id) {
         var query = "SELECT id, name FROM employee WHERE id = ?";
 
         try (var ps = conn.prepareStatement(query)) {
@@ -77,11 +65,14 @@ public class EmployeeRepository {
         }
     }
 
+    /**
+     * @return All employee ids in the database
+     */
     @SneakyThrows
-    public List<UUID> findAllIds() {
+    public List<UUID> findAllIds(final Connection conn) {
         var query = "SELECT id FROM employee";
 
-        try (var conn = dataSource.getConnection(); var ps = conn.createStatement()) {
+        try (var ps = conn.createStatement()) {
             var result = new ArrayList<UUID>();
             try (var rs = ps.executeQuery(query)) {
                 while (rs.next()) {
@@ -92,18 +83,23 @@ public class EmployeeRepository {
         }
     }
 
+    /**
+     * Add a new employee. This will automatically notify all subscribers
+     *
+     * @param conn     The connection
+     * @param employee The employee
+     */
     @SneakyThrows
-    public void insert(final Employee employee) {
+    public void insert(final Connection conn, final Employee employee) {
         validate(employee);
 
         var query = "INSERT INTO employee (name) VALUES (?)";
 
-        try (var conn = dataSource.getConnection(); var ps = conn.prepareStatement(query, Statement.RETURN_GENERATED_KEYS)) {
+        try (var ps = conn.prepareStatement(query, Statement.RETURN_GENERATED_KEYS)) {
             ps.setString(1, employee.getName());
             if (ps.executeUpdate() != 1) {
                 throw new RuntimeException("Failed to insert employee");
             }
-            conn.commit();
             try (var rs = ps.getGeneratedKeys()) {
                 if (rs.next()) {
                     employee.setId((UUID) rs.getObject("id"));
@@ -115,10 +111,11 @@ public class EmployeeRepository {
     /**
      * Delete the supplied employee
      *
+     * @param conn     The connection
      * @param employee The employee
      */
-    public void delete(final Employee employee) {
-        if (!deleteById(employee.getId())) {
+    public void delete(final Connection conn, final Employee employee) {
+        if (!deleteById(conn, employee.getId())) {
             throw new RuntimeException("Failed to delete " + employee);
         }
     }
@@ -126,19 +123,18 @@ public class EmployeeRepository {
     /**
      * Delete an employee with the supplied id
      *
-     * @param id The employee id
+     * @param conn The connection
+     * @param id   The employee id
      * @return true if removing the employee was successful
      */
     @SneakyThrows
-    public boolean deleteById(final UUID id) {
+    public boolean deleteById(final Connection conn, final UUID id) {
         var query = "DELETE FROM employee WHERE id = ?";
-
-        try (var conn = dataSource.getConnection(); var ps = conn.prepareStatement(query)) {
+        try (var ps = conn.prepareStatement(query)) {
             ps.setObject(1, id);
             if (ps.executeUpdate() != 1) {
                 return false;
             }
-            conn.commit();
         }
         return true;
     }
@@ -151,12 +147,11 @@ public class EmployeeRepository {
      * @param deleted Called when an employee is deleted
      * @return a closable subscribe
      */
-    public AutoCloseable subscribe(Consumer<Employee> added, Consumer<Employee> updated, Consumer<UUID> deleted) {
-        findAll().forEach(added);
+    public AutoCloseable subscribe(DataSource dataSource, Consumer<UUID> added, Consumer<UUID> updated, Consumer<UUID> deleted) {
         var thread = new Thread(() -> {
             while (!Thread.currentThread().isInterrupted()) {
                 try {
-                    doSubscribe(added, updated, deleted);
+                    doSubscribe(dataSource, added, updated, deleted);
                 } catch (Exception e) {
                     log.error("Error while subscribing", e);
                     try {
@@ -185,7 +180,7 @@ public class EmployeeRepository {
      * @param deleted Called when an employee is deleted
      */
     @SneakyThrows
-    private void doSubscribe(Consumer<Employee> added, Consumer<Employee> updated, Consumer<UUID> deleted) {
+    private void doSubscribe(DataSource dataSource, Consumer<UUID> added, Consumer<UUID> updated, Consumer<UUID> deleted) {
         var query = "LISTEN employee_changed";
         try (var conn = dataSource.getConnection()) {
             var ps = conn.createStatement();
@@ -206,14 +201,8 @@ public class EmployeeRepository {
                         var action = parts[1];
                         var id = UUID.fromString(parts[2]);
                         switch (action) {
-                            case "I" -> {
-                                var employee = findOne(id);
-                                employee.ifPresent(added);
-                            }
-                            case "U" -> {
-                                var employee = findOne(id);
-                                employee.ifPresent(updated);
-                            }
+                            case "I" -> added.accept(id);
+                            case "U" -> updated.accept(id);
                             case "D" -> deleted.accept(id);
                         }
                     }

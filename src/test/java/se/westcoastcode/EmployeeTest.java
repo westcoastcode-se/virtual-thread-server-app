@@ -101,6 +101,23 @@ public class EmployeeTest {
         }
     }
 
+    @SneakyThrows
+    public static Employee deleteEmployee(Employee employee) {
+        var request = HttpRequest.newBuilder()
+                .uri(new URI("http://localhost:" + main.getAppConfig().getServer().getPort() + "/api/v1/employees/" + employee.getId()))
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + accessToken.accessToken())
+                .DELETE()
+                .build();
+        try (var client = HttpClient.newHttpClient()) {
+            var response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
+            assertEquals(200, response.statusCode());
+            var employees = fromJson(Employee.class, response.body());
+            assertNotNull(employees);
+            return employees;
+        }
+    }
+
     @Test
     @SneakyThrows
     public void verifyAddingAndGettingEmployees() {
@@ -116,5 +133,11 @@ public class EmployeeTest {
         employees = getEmployees();
         assertEquals(1, employees.length);
         assertEquals(addedEmployee, employees[0]);
+
+        var deletedEmployee = deleteEmployee(addedEmployee);
+        assertEquals(addedEmployee, deletedEmployee);
+
+        employees = getEmployees();
+        assertEquals(0, employees.length);
     }
 }
