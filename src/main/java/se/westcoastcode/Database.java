@@ -27,6 +27,9 @@ public final class Database {
                      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                      name VARCHAR(100)
                 )""");
+        // Register a channel that we can listen for from Java.
+        // TODO: This is not really production-friendly yet. Race-conditions exists. Add a notification table
+        // TODO: Make an example on using Kafka instead of a database channel database for this
         stmt.execute("""
                 CREATE OR REPLACE FUNCTION notify_employee_changed() RETURNS TRIGGER AS $$
                     BEGIN
