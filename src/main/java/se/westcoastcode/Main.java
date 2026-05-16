@@ -11,6 +11,7 @@ import io.fusionauth.http.server.HTTPServer;
 import jakarta.validation.ConstraintViolationException;
 import lombok.Getter;
 import lombok.SneakyThrows;
+import se.westcoastcode.features.Context;
 import se.westcoastcode.persistence.Employee;
 import se.westcoastcode.persistence.EmployeeRepository;
 
@@ -19,7 +20,6 @@ import java.util.UUID;
 
 import static se.westcoastcode.Config.loadConfig;
 import static se.westcoastcode.features.DatabaseFeatures.sql;
-import static se.westcoastcode.features.DatabaseFeatures.transactional;
 import static se.westcoastcode.features.HTTPFeatures.*;
 import static se.westcoastcode.features.JSONFeature.fromJson;
 import static se.westcoastcode.features.JWTFeature.authenticate;
@@ -90,9 +90,9 @@ public final class Main implements AutoCloseable {
      * @param res The response
      */
     @SneakyThrows
-    public void exceptionHandler(HTTPRequest req, HTTPResponse res) {
+    public void exceptionHandler(final Context ctx, HTTPRequest req, HTTPResponse res) {
         try {
-            handleRequest(req, res);
+            handleRequest(ctx, req, res);
         } catch (final HttpError e) {
             status(e.createErrorMessage(), res, e.getHttpCode());
         } catch (final ConstraintViolationException e) {
@@ -114,7 +114,7 @@ public final class Main implements AutoCloseable {
      */
     public void traceLogging(HTTPRequest req, HTTPResponse res) {
         var time = System.currentTimeMillis();
-        exceptionHandler(req, res);
+        exceptionHandler(new Context(dataSource), req, res);
         var elapsed = System.currentTimeMillis() - time;
         log.info("Incoming Request:'{} {}', Time:{} ms", req.getMethod(), req.getPath(), elapsed);
     }
@@ -126,7 +126,7 @@ public final class Main implements AutoCloseable {
      * @param res The response
      */
     @SneakyThrows
-    public void handleRequest(HTTPRequest req, HTTPResponse res) {
+    public void handleRequest(final Context context, HTTPRequest req, HTTPResponse res) {
         if (req.getPath().equals("/api/v1/ping")) {
             if (req.getMethod() == HTTPMethod.GET) {
                 ok("pong", res);
@@ -135,18 +135,14 @@ public final class Main implements AutoCloseable {
         } else if (req.getPath().equals("/api/v1/employees")) {
             if (req.getMethod() == HTTPMethod.GET) {
                 var _ = authenticate(req, "test:read");
-                var employees = transactional(dataSource, true, conn -> {
-                    return employeeRepository.findAll(conn);
-                });
+                var employees = employeeRepository.findAll(context);
                 ok(employees, res);
                 return;
             }
             if (req.getMethod() == HTTPMethod.POST) {
                 var _ = authenticate(req, "test:write");
                 var employee = fromJson(Employee.class, req);
-                transactional(dataSource, conn -> {
-                    employeeRepository.insert(conn, employee);
-                });
+                employeeRepository.insert(context, employee);
                 created(employee, res);
                 return;
             }
@@ -154,25 +150,21 @@ public final class Main implements AutoCloseable {
             if (req.getMethod() == HTTPMethod.GET) {
                 var _ = authenticate(req, "test:read");
                 var id = valueFromPath(req, "/api/v1/employees/%", UUID.class);
-                var employee = transactional(dataSource, true, conn -> {
-                    var optionalEmployee = employeeRepository.findOne(conn, id);
-                    if (optionalEmployee.isEmpty()) {
-                        throw notFound(req);
-                    }
-                    return optionalEmployee.get();
-                });
-
+                var employee = employeeRepository.findOne(context, id);
+                if (employee.isEmpty()) {
+                    throw notFound(req);
+                }
                 ok(employee, res);
                 return;
             } else if (req.getMethod() == HTTPMethod.DELETE) {
                 var _ = authenticate(req, "test:delete");
                 var id = valueFromPath(req, "/api/v1/employees/%", UUID.class);
-                var employee = transactional(dataSource, conn -> {
-                    var optionalEmployee = employeeRepository.findOne(conn, id);
+                var employee = context.transactional((ctx, _) -> {
+                    var optionalEmployee = employeeRepository.findOne(ctx, id);
                     if (optionalEmployee.isEmpty()) {
                         throw notFound(req);
                     }
-                    employeeRepository.delete(conn, optionalEmployee.get());
+                    employeeRepository.delete(ctx, optionalEmployee.get());
                     return optionalEmployee.get();
                 });
                 ok(employee, res);

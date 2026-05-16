@@ -4,10 +4,12 @@ import io.fusionauth.http.log.Logger;
 import lombok.SneakyThrows;
 import org.postgresql.PGConnection;
 import org.postgresql.PGNotification;
+import se.westcoastcode.features.Context;
 
 import javax.sql.DataSource;
 import java.io.EOFException;
-import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
@@ -22,100 +24,109 @@ public class EmployeeRepository {
     private static final Logger log = getLogger(EmployeeRepository.class);
 
     @SneakyThrows
-    public List<Employee> findAll(final Connection conn) {
+    public List<Employee> findAll(final Context context) {
         var query = "SELECT id, name FROM employee";
 
-        try (var ps = conn.createStatement()) {
-            var result = new ArrayList<Employee>();
-            try (var rs = ps.executeQuery(query)) {
-                while (rs.next()) {
-                    result.add(new Employee(
-                            (UUID) rs.getObject("id"),
-                            rs.getString("name")
-                    ));
+        return context.readonly((_, conn) -> {
+
+            try (final Statement ps = conn.createStatement()) {
+                var result = new ArrayList<Employee>();
+                try (final ResultSet rs = ps.executeQuery(query)) {
+                    while (rs.next()) {
+                        result.add(new Employee(
+                                (UUID) rs.getObject("id"),
+                                rs.getString("name")
+                        ));
+                    }
                 }
+                return result;
             }
-            return result;
-        }
+        });
     }
 
     /**
      * Find a single employee
      *
-     * @param conn The connection
-     * @param id   The employee id
+     * @param context The context
+     * @param id      The employee id
      * @return The employee if found; Optional.empty() otherwise
      */
     @SneakyThrows
-    public Optional<Employee> findOne(final Connection conn, final UUID id) {
+    public Optional<Employee> findOne(final Context context, final UUID id) {
         var query = "SELECT id, name FROM employee WHERE id = ?";
 
-        try (var ps = conn.prepareStatement(query)) {
-            ps.setObject(1, id);
-            try (var rs = ps.executeQuery()) {
-                if (rs.next()) {
-                    return Optional.of(new Employee(
-                            (UUID) rs.getObject("id"),
-                            rs.getString("name")
-                    ));
-                } else {
-                    return Optional.empty();
+        return context.readonly((_, conn) -> {
+            try (final PreparedStatement ps = conn.prepareStatement(query)) {
+                ps.setObject(1, id);
+                try (final ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        return Optional.of(new Employee(
+                                (UUID) rs.getObject("id"),
+                                rs.getString("name")
+                        ));
+                    } else {
+                        return Optional.empty();
+                    }
                 }
             }
-        }
+        });
     }
 
     /**
      * @return All employee ids in the database
      */
     @SneakyThrows
-    public List<UUID> findAllIds(final Connection conn) {
+    public List<UUID> findAllIds(final Context context) {
         var query = "SELECT id FROM employee";
 
-        try (var ps = conn.createStatement()) {
-            var result = new ArrayList<UUID>();
-            try (var rs = ps.executeQuery(query)) {
-                while (rs.next()) {
-                    result.add((UUID) rs.getObject("id"));
+        return context.readonly((_, conn) -> {
+            try (final Statement ps = conn.createStatement()) {
+                var result = new ArrayList<UUID>();
+                try (final ResultSet rs = ps.executeQuery(query)) {
+                    while (rs.next()) {
+                        result.add((UUID) rs.getObject("id"));
+                    }
                 }
+                return result;
             }
-            return result;
-        }
+        });
     }
 
     /**
      * Add a new employee. This will automatically notify all subscribers
      *
-     * @param conn     The connection
+     * @param context  The context
      * @param employee The employee
      */
     @SneakyThrows
-    public void insert(final Connection conn, final Employee employee) {
+    public void insert(final Context context, final Employee employee) {
         validate(employee);
 
         var query = "INSERT INTO employee (name) VALUES (?)";
 
-        try (var ps = conn.prepareStatement(query, Statement.RETURN_GENERATED_KEYS)) {
-            ps.setString(1, employee.getName());
-            if (ps.executeUpdate() != 1) {
-                throw new RuntimeException("Failed to insert employee");
-            }
-            try (var rs = ps.getGeneratedKeys()) {
-                if (rs.next()) {
-                    employee.setId((UUID) rs.getObject("id"));
+        context.transactional((_, conn) -> {
+            try (final PreparedStatement ps = conn.prepareStatement(query, Statement.RETURN_GENERATED_KEYS)) {
+                ps.setString(1, employee.getName());
+                if (ps.executeUpdate() != 1) {
+                    throw new RuntimeException("Failed to insert employee");
+                }
+                try (final ResultSet rs = ps.getGeneratedKeys()) {
+                    if (rs.next()) {
+                        employee.setId((UUID) rs.getObject("id"));
+                    }
                 }
             }
-        }
+        });
     }
 
     /**
      * Delete the supplied employee
      *
-     * @param conn     The connection
+     * @param context  The context
      * @param employee The employee
      */
-    public void delete(final Connection conn, final Employee employee) {
-        if (!deleteById(conn, employee.getId())) {
+    public void delete(final Context context, final Employee employee) {
+        if (!deleteById(context, employee.getId())) {
             throw new RuntimeException("Failed to delete " + employee);
         }
     }
@@ -123,20 +134,23 @@ public class EmployeeRepository {
     /**
      * Delete an employee with the supplied id
      *
-     * @param conn The connection
-     * @param id   The employee id
+     * @param context The context
+     * @param id      The employee id
      * @return true if removing the employee was successful
      */
     @SneakyThrows
-    public boolean deleteById(final Connection conn, final UUID id) {
+    public boolean deleteById(final Context context, final UUID id) {
         var query = "DELETE FROM employee WHERE id = ?";
-        try (var ps = conn.prepareStatement(query)) {
-            ps.setObject(1, id);
-            if (ps.executeUpdate() != 1) {
-                return false;
+
+        return context.transactional((_, conn) -> {
+            try (final PreparedStatement ps = conn.prepareStatement(query)) {
+                ps.setObject(1, id);
+                if (ps.executeUpdate() != 1) {
+                    return false;
+                }
             }
-        }
-        return true;
+            return true;
+        });
     }
 
     /**
