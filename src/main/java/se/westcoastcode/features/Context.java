@@ -1,5 +1,6 @@
 package se.westcoastcode.features;
 
+import jakarta.validation.constraints.NotNull;
 import lombok.SneakyThrows;
 
 import javax.sql.DataSource;
@@ -30,13 +31,20 @@ public final class Context {
     }
 
     @FunctionalInterface
-    public interface ExceptionalFunction<T, R> {
-        R apply(T t, Connection conn) throws Exception;
+    public interface ContextFunction<R> {
+        R apply(@NotNull Context ctx, @NotNull Connection conn) throws Exception;
     }
 
     @FunctionalInterface
-    public interface ExceptionalConsumer<T> {
-        void accept(T t, Connection conn) throws Exception;
+    public interface ContextConsumer {
+        void accept(@NotNull Context ctx, @NotNull Connection conn) throws Exception;
+    }
+
+    /**
+     * @return A unique ID for this context's lifetime
+     */
+    public String traceId() {
+        return traceId;
     }
 
     /**
@@ -48,7 +56,7 @@ public final class Context {
      *          with an opened connection
      */
     @SneakyThrows
-    public void transactional(final ExceptionalConsumer<Context> r) {
+    public void transactional(final ContextConsumer r) {
         if (connection != null) {
             // Uplift connection to disable readonly
             var readOnly = connection.isReadOnly();
@@ -79,7 +87,7 @@ public final class Context {
      *          with an opened connection
      */
     @SneakyThrows
-    public <T> T transactional(final ExceptionalFunction<Context, T> r) {
+    public <RET> RET transactional(final ContextFunction<RET> r) {
         if (connection != null) {
             // Uplift connection to disable readonly
             var readOnly = connection.isReadOnly();
@@ -89,7 +97,7 @@ public final class Context {
             return r.apply(this, connection);
         }
 
-        final T result;
+        final RET result;
         try (var conn = dataSource.getConnection()) {
             try {
                 result = r.apply(new Context(dataSource, traceId, conn), conn);
@@ -113,7 +121,7 @@ public final class Context {
      *          with an opened connection
      */
     @SneakyThrows
-    public void readonly(final ExceptionalConsumer<Context> r) {
+    public void readonly(final ContextConsumer r) {
         if (connection != null) {
             r.accept(this, connection);
             return;
@@ -145,12 +153,12 @@ public final class Context {
      * @param r The runnable
      */
     @SneakyThrows
-    public <T> T readonly(final ExceptionalFunction<Context, T> r) {
+    public <RET> RET readonly(final ContextFunction<RET> r) {
         if (connection != null) {
             return r.apply(this, connection);
         }
 
-        final T result;
+        final RET result;
         try (var conn = dataSource.getConnection()) {
             try {
                 conn.setReadOnly(true);
@@ -167,5 +175,10 @@ public final class Context {
             }
         }
         return result;
+    }
+
+    @Override
+    public String toString() {
+        return "C:\"" + traceId + "\"";
     }
 }

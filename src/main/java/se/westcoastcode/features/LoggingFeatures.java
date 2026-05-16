@@ -108,7 +108,7 @@ public final class LoggingFeatures {
                 for (int i = 0; i < values.length; i++) {
                     Object value = values[i];
                     if (value != null) {
-                        value = value.toString().replace("[\\p{C}]", "");
+                        value = value.toString().replace("[\\p{C}]", "?");
                     }
                     object[i] = value;
                 }

@@ -23,12 +23,17 @@ import static se.westcoastcode.features.ValidationFeatures.validate;
 public class EmployeeRepository {
     private static final Logger log = getLogger(EmployeeRepository.class);
 
+    /**
+     * Get all employees
+     *
+     * @param context The context
+     * @return A list of all employees
+     */
     @SneakyThrows
     public List<Employee> findAll(final Context context) {
-        var query = "SELECT id, name FROM employee";
+        var query = "SELECT * FROM employee";
 
         return context.readonly((_, conn) -> {
-
             try (final Statement ps = conn.createStatement()) {
                 var result = new ArrayList<Employee>();
                 try (final ResultSet rs = ps.executeQuery(query)) {
@@ -53,7 +58,7 @@ public class EmployeeRepository {
      */
     @SneakyThrows
     public Optional<Employee> findOne(final Context context, final UUID id) {
-        var query = "SELECT id, name FROM employee WHERE id = ?";
+        var query = "SELECT * FROM employee WHERE id = ?";
 
         return context.readonly((_, conn) -> {
             try (final PreparedStatement ps = conn.prepareStatement(query)) {
